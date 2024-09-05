@@ -1,16 +1,18 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+#include "memory.h"
 
 typedef struct cmalloc_chunk_meta cmalloc_chunk_meta;
 
 void *memory = NULL;
 cmalloc_chunk_meta *mem_base = NULL;
-char *mem_end = NULL;
+
+#define CHUNK_META(chunk) ((cmalloc_chunk_meta*)chunk-1)
 
 struct cmalloc_chunk_meta {
     int free;
     size_t size;
+    cmalloc_chunk_meta *prev;
     cmalloc_chunk_meta *next;
 };
 
@@ -27,7 +29,23 @@ void cmalloc_dump() {
 }
 
 void cmalloc_free(void *ptr) {
-    ((cmalloc_chunk_meta*)ptr-1)->free=1;
+    cmalloc_chunk_meta *chunk = CHUNK_META(ptr);
+    if(chunk->prev) {
+        if(chunk->prev->free) {
+            cmalloc_chunk_meta *chunk_prev=chunk->prev;
+            chunk_prev->size+=chunk->size+sizeof(cmalloc_chunk_meta);
+            chunk_prev->next=chunk->next;
+            chunk=chunk_prev;
+        }
+    }
+    if(chunk->next) {
+        if(chunk->next->free) {
+            cmalloc_chunk_meta *chunk_next=chunk->next;
+            chunk->size+=chunk->next->size+sizeof(cmalloc_chunk_meta);
+            chunk->next= chunk_next->next;
+        }
+    }
+    CHUNK_META(ptr)->free=1;
 }
 
 void *cmalloc(size_t size) {
@@ -35,39 +53,50 @@ void *cmalloc(size_t size) {
         cmalloc_chunk_meta *chunk=mem_base;
         while(1) {
             if(chunk->free && chunk->size>=size) {
+                if(chunk->size>size+sizeof(cmalloc_chunk_meta)) {
+                    cmalloc_chunk_meta *new_chunk = (cmalloc_chunk_meta*)((char*)(chunk+1)+size);
+                    *new_chunk = (cmalloc_chunk_meta){1,chunk->size-size-sizeof(cmalloc_chunk_meta),chunk,chunk->next};
+                    chunk->size=size;
+                    chunk->next=new_chunk;
+                }
                 break;
-            }else if(!chunk->next) {
-                chunk->next = (cmalloc_chunk_meta*)mem_end;
-                chunk=(cmalloc_chunk_meta*)mem_end;
-                chunk->next=NULL;
-                chunk->size=size;
-                mem_end +=size+sizeof(cmalloc_chunk_meta);
+            }
+            if(!chunk->next) {
+                memory_expand(size+sizeof(cmalloc_chunk_meta));
+                cmalloc_chunk_meta *new_chunk = (cmalloc_chunk_meta*)((char*)(chunk+1)+chunk->size);
+                chunk->next = new_chunk;
+                new_chunk->size=size;
+                new_chunk->prev=chunk;
+                new_chunk->next=NULL;
+                chunk=new_chunk;
                 break;
             }
             chunk=chunk->next;
         }
         chunk->free=0;
-        return chunk->next+1;
+        return chunk+1;
     }else {
-        mem_base=memory;
-        mem_end = memory+size+sizeof(cmalloc_chunk_meta);
-        *mem_base=(cmalloc_chunk_meta){0,size,NULL};
+        mem_base=memory_base();
+        memory_expand(size+sizeof(cmalloc_chunk_meta));
+        *mem_base=(cmalloc_chunk_meta){0,size,NULL, NULL};
         return mem_base+1;
     }
 }
 
 int main() {
-    memory = malloc(1024);
-
-    int *vec1 = cmalloc(3*sizeof(int));
+    int *vec1 = cmalloc(2*sizeof(int)+sizeof(cmalloc_chunk_meta));
     int *vec2 = cmalloc(1*sizeof(int));
     int *vec3 = cmalloc(1*sizeof(int));
-    cmalloc_free(vec1);
-    int *vec4 = cmalloc(1*sizeof(int));
     cmalloc_dump();
-    printf("NO Cradsh");
-
-    free(memory);
+    cmalloc_free(vec1);
+    cmalloc_free(vec2);
+    cmalloc_free(vec3);
+    printf("\n");
+    vec1 = cmalloc(2*sizeof(int)+sizeof(cmalloc_chunk_meta));
+    vec2 = cmalloc(1*sizeof(int));
+    vec3 = cmalloc(1*sizeof(int));
+    cmalloc_dump();
+    printf("NO Cradsh\n");
     return 0;
 }
 
