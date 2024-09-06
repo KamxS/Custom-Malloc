@@ -5,6 +5,16 @@ typedef struct cmalloc_chunk_meta cmalloc_chunk_meta;
 
 #define CHUNK_META(chunk) ((cmalloc_chunk_meta*)chunk-1)
 
+// TODO:
+/*
+    - 8-byte Alignment 
+    - real free
+    - calloc
+    - realloc
+    - real error handling
+    - no global memory?
+*/
+
 struct cmalloc_chunk_meta {
     int free;
     size_t size;
@@ -95,5 +105,3 @@ int main() {
     printf("NO Cradsh\n");
     return 0;
 }
-
-// new_value = ( (old_value - old_min) / (old_max - old_min) ) * (new_max - new_min) + new_min
